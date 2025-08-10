@@ -1,38 +1,111 @@
-version: '3.8'
-
 services:
   mongo:
     image: mongo:7
-    restart: unless-stopped
-    volumes:
-      - mongo_data:/data/db
-
-  backend:
-    build: ./backend
+    container_name: wellness_mongo_prod
     restart: unless-stopped
     environment:
-      - PORT=3000
-      - MONGODB_URI=${MONGODB_URI:-mongodb://mongo:27017/wellness_app}
-      - JWT_SECRET=${JWT_SECRET}
-      - FRONTEND_ORIGIN=${FRONTEND_ORIGIN:-http://localhost}
-    depends_on:
-      - mongo
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USER:-admin}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD}
+      MONGO_INITDB_DATABASE: ${MONGO_DB_NAME:-wellness_app}
+    volumes:
+      - mongo_data:/data/db
+      - ./mongo-init:/docker-entrypoint-initdb.d:ro
     networks:
-      - app
+      - app_network
+    # Uncomment to expose MongoDB port (for debugging only)
+    # ports:
+    #   - "27017:27017"
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      args:
+        NODE_ENV: production
+    container_name: wellness_backend_prod
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      MONGODB_URI: ${MONGODB_URI:-mongodb://mongo:27017/wellness_app}
+      JWT_SECRET: ${JWT_SECRET}
+      FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:-http://localhost}
+      # Add any other environment variables your backend needs
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    depends_on:
+      mongo:
+        condition: service_healthy
+    networks:
+      - app_network
+    # Uncomment to expose backend port (for debugging only)
+    # ports:
+    #   - "3000:3000"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    volumes:
+      # Mount logs directory if needed
+      - ./logs:/app/logs
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
 
   frontend:
-    build: ./frontend
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        NODE_ENV: production
+        REACT_APP_API_URL: ${REACT_APP_API_URL:-http://localhost:3000}
+        # Add other build-time environment variables
+    container_name: wellness_frontend_prod
     restart: unless-stopped
     ports:
-      - "80:80"
+      - "${FRONTEND_PORT:-80}:80"
+      - "${FRONTEND_HTTPS_PORT:-443}:443"
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     networks:
-      - app
+      - app_network
+    volumes:
+      # Mount SSL certificates if using HTTPS
+      # - ./ssl:/etc/ssl/certs:ro
+      # Mount nginx config if needed
+      # - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      pass
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:80"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.25'
 
 networks:
-  app:
+  app_network:
     driver: bridge
+    name: wellness_network
 
 volumes:
   mongo_data:
+    name: wellness_mongo_data
+    driver: local
+
+# Uncomment for development override
+# If you need to override settings for development, create docker-compose.override.yml
