@@ -55,3 +55,9 @@ Frontend (Netlify or Vercel):
 Optional Docker:
 - Backend: build `docker build -t wellness-backend ./backend` and run with envs and port 3000
 - Frontend: build `docker build -t wellness-frontend ./frontend` and serve on port 80
+
+### Linode (single VM) with Docker Compose
+See `DEPLOY-LINODE.md` for a production `docker-compose.prod.yml` stack (Mongo + backend + frontend with Nginx proxy).
+
+### AWS EC2 (single instance) with Docker Compose
+See `DEPLOY-EC2.md` for EC2 steps on Amazon Linux or Ubuntu.
